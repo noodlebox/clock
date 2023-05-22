@@ -51,6 +51,34 @@ func NewClock() Clock {
 	return Clock{}
 }
 
+// Helpers for generating Duration values
+
+func (Clock) Nanoseconds(n int64) Duration {
+	return Duration(n * int64(Nanosecond))
+}
+
+func (Clock) Microseconds(n int64) Duration {
+	return Duration(n * int64(Microsecond))
+}
+
+func (Clock) Milliseconds(n int64) Duration {
+	return Duration(n * int64(Millisecond))
+}
+
+func (Clock) Seconds(n float64) Duration {
+	return Duration(n * float64(Second))
+}
+
+func (Clock) Minutes(n float64) Duration {
+	return Duration(n * float64(Minute))
+}
+
+func (Clock) Hours(n float64) Duration {
+	return Duration(n * float64(Hour))
+}
+
+// Wrappers for `time` package functions
+
 func (Clock) Now() Time {
 	return time.Now()
 }
@@ -71,57 +99,45 @@ func (Clock) Sleep(d Duration) {
 	time.Sleep(d)
 }
 
-// clock.Ticker[time.Time]
-type Ticker interface {
-	C() <-chan Time
-	Reset(d Duration)
-	Stop()
-}
-
-// Wraps time.Ticker to complete implementation of clock.Ticker[time.Time]
-type ticker struct {
+// Wraps time.Ticker to complete interfaceable implementation
+type Ticker struct {
 	time.Ticker
 }
 
-func (t *ticker) C() <-chan Time {
+func (t *Ticker) C() <-chan Time {
 	return t.Ticker.C
 }
 
-func (Clock) NewTicker(d Duration) Ticker {
-	return &ticker{*time.NewTicker(d)}
+func (Clock) NewTicker(d Duration) *Ticker {
+	return &Ticker{*time.NewTicker(d)}
 }
 
 func (Clock) Tick(d Duration) <-chan Time {
 	return time.Tick(d)
 }
 
-// clock.Timer[time.Time]
-type Timer interface {
-	C() <-chan Time
-	Reset(d Duration) bool
-	Stop() bool
-}
-
-// Wraps time.Timer to complete implementation of clock.Timer[time.Time]
-type timer struct {
+// Wraps time.Timer to complete interfaceable implementation
+type Timer struct {
 	time.Timer
 }
 
-func (t *timer) C() <-chan Time {
+func (t *Timer) C() <-chan Time {
 	return t.Timer.C
 }
 
-func (Clock) NewTimer(d Duration) Timer {
-	return &timer{*time.NewTimer(d)}
+func (Clock) NewTimer(d Duration) *Timer {
+	return &Timer{*time.NewTimer(d)}
 }
 
 func (Clock) After(d Duration) <-chan Time {
 	return time.After(d)
 }
 
-func (Clock) AfterFunc(d Duration, f func()) Timer {
-	return &timer{*time.AfterFunc(d, f)}
+func (Clock) AfterFunc(d Duration, f func()) *Timer {
+	return &Timer{*time.AfterFunc(d, f)}
 }
+
+// Wall clock (Location dependent) implementation
 
 func (Clock) Parse(layout, value string) (Time, error) {
 	return time.Parse(layout, value)
