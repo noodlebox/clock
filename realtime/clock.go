@@ -1,0 +1,152 @@
+package realtime
+
+import (
+	"time"
+)
+
+type Location = time.Location
+type Month = time.Month
+type Weekday = time.Weekday
+type Duration = time.Duration
+type Time = time.Time
+
+const (
+	Nanosecond  = time.Nanosecond
+	Microsecond = time.Microsecond
+	Millisecond = time.Millisecond
+	Second      = time.Second
+	Minute      = time.Minute
+	Hour        = time.Hour
+)
+
+// Layouts
+const (
+	Layout      = "01/02 03:04:05PM '06 -0700" // The reference time, in numerical order.
+	ANSIC       = "Mon Jan _2 15:04:05 2006"
+	UnixDate    = "Mon Jan _2 15:04:05 MST 2006"
+	RubyDate    = "Mon Jan 02 15:04:05 -0700 2006"
+	RFC822      = "02 Jan 06 15:04 MST"
+	RFC822Z     = "02 Jan 06 15:04 -0700" // RFC822 with numeric zone
+	RFC850      = "Monday, 02-Jan-06 15:04:05 MST"
+	RFC1123     = "Mon, 02 Jan 2006 15:04:05 MST"
+	RFC1123Z    = "Mon, 02 Jan 2006 15:04:05 -0700" // RFC1123 with numeric zone
+	RFC3339     = "2006-01-02T15:04:05Z07:00"
+	RFC3339Nano = "2006-01-02T15:04:05.999999999Z07:00"
+	Kitchen     = "3:04PM"
+	// Handy time stamps.
+	Stamp      = "Jan _2 15:04:05"
+	StampMilli = "Jan _2 15:04:05.000"
+	StampMicro = "Jan _2 15:04:05.000000"
+	StampNano  = "Jan _2 15:04:05.000000000"
+	DateTime   = "2006-01-02 15:04:05"
+	DateOnly   = "2006-01-02"
+	TimeOnly   = "15:04:05"
+)
+
+// Wraps package level functions from `time` to implement
+// `clock.LocatedClock[time.Time]`
+type Clock struct{}
+
+func NewClock() Clock {
+	return Clock{}
+}
+
+func (Clock) Now() Time {
+	return time.Now()
+}
+
+func (Clock) ParseDuration(s string) (Duration, error) {
+	return time.ParseDuration(s)
+}
+
+func (Clock) Since(t Time) Duration {
+	return time.Since(t)
+}
+
+func (Clock) Until(t Time) Duration {
+	return time.Until(t)
+}
+
+func (Clock) Sleep(d Duration) {
+	time.Sleep(d)
+}
+
+// clock.Ticker[time.Time]
+type Ticker interface {
+	C() <-chan Time
+	Reset(d Duration)
+	Stop()
+}
+
+// Wraps time.Ticker to complete implementation of clock.Ticker[time.Time]
+type ticker struct {
+	time.Ticker
+}
+
+func (t *ticker) C() <-chan Time {
+	return t.Ticker.C
+}
+
+func (Clock) NewTicker(d Duration) Ticker {
+	return &ticker{*time.NewTicker(d)}
+}
+
+func (Clock) Tick(d Duration) <-chan Time {
+	return time.Tick(d)
+}
+
+// clock.Timer[time.Time]
+type Timer interface {
+	C() <-chan Time
+	Reset(d Duration) bool
+	Stop() bool
+}
+
+// Wraps time.Timer to complete implementation of clock.Timer[time.Time]
+type timer struct {
+	time.Timer
+}
+
+func (t *timer) C() <-chan Time {
+	return t.Timer.C
+}
+
+func (Clock) NewTimer(d Duration) Timer {
+	return &timer{*time.NewTimer(d)}
+}
+
+func (Clock) After(d Duration) <-chan Time {
+	return time.After(d)
+}
+
+func (Clock) AfterFunc(d Duration, f func()) Timer {
+	return &timer{*time.AfterFunc(d, f)}
+}
+
+func (Clock) Parse(layout, value string) (Time, error) {
+	return time.Parse(layout, value)
+}
+
+func (Clock) ParseInLocation(layout, value string, loc *Location) (Time, error) {
+	return time.ParseInLocation(layout, value, loc)
+}
+
+func (Clock) Date(year int, month Month, day, hour, min, sec, nsec int, loc *Location) Time {
+	return time.Date(year, month, day, hour, min, sec, nsec, loc)
+}
+
+func (Clock) Unix(sec int64, nsec int64) Time {
+	return time.Unix(sec, nsec)
+}
+
+func (Clock) UnixMicro(usec int64) Time {
+	return time.UnixMicro(usec)
+}
+
+func (Clock) UnixMilli(msec int64) Time {
+	return time.UnixMilli(msec)
+}
+
+func (Clock) UnixNano(nsec int64) Time {
+	return time.Unix(0, nsec)
+}
