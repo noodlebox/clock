@@ -43,7 +43,9 @@ type Duration interface {
 // scaling factor.
 // NOTE: composition with the reference clock would be such a nice feature
 // here, to inherit all the methods of the reference clock. Maybe in a future
-// version of Go...
+// version of Go... See `mocktime` package for an example of using embedding
+// with instantiated generic types for a drop in replacement for a reference
+// clock.
 type Clock[T Time[T, D], D Duration, RT RTimer[T, D]] struct {
 	ref       RClock[T, D, RT]
 	scale     float64
