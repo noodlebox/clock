@@ -101,7 +101,7 @@ func (Clock) Sleep(d Duration) {
 
 // Wraps time.Ticker to complete interfaceable implementation
 type Ticker struct {
-	time.Ticker
+	*time.Ticker
 }
 
 func (t *Ticker) C() <-chan Time {
@@ -109,7 +109,7 @@ func (t *Ticker) C() <-chan Time {
 }
 
 func (Clock) NewTicker(d Duration) *Ticker {
-	return &Ticker{*time.NewTicker(d)}
+	return &Ticker{time.NewTicker(d)}
 }
 
 func (Clock) Tick(d Duration) <-chan Time {
@@ -118,7 +118,7 @@ func (Clock) Tick(d Duration) <-chan Time {
 
 // Wraps time.Timer to complete interfaceable implementation
 type Timer struct {
-	time.Timer
+	*time.Timer
 }
 
 func (t *Timer) C() <-chan Time {
@@ -126,7 +126,7 @@ func (t *Timer) C() <-chan Time {
 }
 
 func (Clock) NewTimer(d Duration) *Timer {
-	return &Timer{*time.NewTimer(d)}
+	return &Timer{time.NewTimer(d)}
 }
 
 func (Clock) After(d Duration) <-chan Time {
@@ -134,7 +134,7 @@ func (Clock) After(d Duration) <-chan Time {
 }
 
 func (Clock) AfterFunc(d Duration, f func()) *Timer {
-	return &Timer{*time.AfterFunc(d, f)}
+	return &Timer{time.AfterFunc(d, f)}
 }
 
 // Wall clock (Location dependent) implementation
