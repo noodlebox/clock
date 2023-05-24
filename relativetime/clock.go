@@ -137,7 +137,7 @@ func (c *Clock[T, D, RT]) resetWaker() {
 		select {
 		case t := <-c.waker.C():
 			// Advance clock to t and process any timers that should trigger
-			c.wake(t)
+			go c.wake(t)
 		case sleep <- struct{}{}:
 			// Interrupted
 		}
@@ -289,10 +289,12 @@ func (c *Clock[T, D, RT]) Sleep(d D) {
 	c.advanceRef(c.ref.Now())
 
 	ch := make(chan struct{})
+	c.stopWaker()
 	c.schedule(&timer[T, D]{
 		f:    func(T) { close(ch) },
 		when: c.now.Add(d),
 	})
+	c.resetWaker()
 	<-ch
 }
 
