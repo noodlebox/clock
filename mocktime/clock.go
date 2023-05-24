@@ -1,14 +1,9 @@
 package mocktime
 
 import (
-	"time"
-
 	"github.com/noodlebox/clock/realtime"
 	"github.com/noodlebox/clock/relativetime"
 )
-
-type Time = time.Time
-type Duration = time.Duration
 
 type baseClock struct {
 	realtime.Clock
@@ -20,7 +15,14 @@ type Clock struct {
 	baseClock // embed within a struct to ensure lower precedence
 }
 
-func NewClock(at Time) Clock {
+func NewClock() Clock {
+	rclock := realtime.NewClock()
+	return Clock{
+		relativetime.NewClock[Time, Duration, *realtime.Timer](rclock, rclock.Now(), 1.0),
+		baseClock{rclock}, // zero value would work, but be explicit for clarity
+	}
+}
+func NewClockAt(at Time) Clock {
 	rclock := realtime.NewClock()
 	return Clock{
 		relativetime.NewClock[Time, Duration, *realtime.Timer](rclock, at, 1.0),
