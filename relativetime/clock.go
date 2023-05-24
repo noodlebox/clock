@@ -332,7 +332,7 @@ func (t *Ticker[T, D]) Reset(d D) {
 
 func (t *Ticker[T, D]) Stop() {
 	if t.t == nil {
-		panic("Reset called on uninitialized relativetime.Ticker")
+		panic("Stop called on uninitialized relativetime.Ticker")
 	}
 
 	t.s.stopWaker()
@@ -398,7 +398,7 @@ func (t *Timer[T, D]) Reset(d D) (active bool) {
 
 func (t *Timer[T, D]) Stop() (active bool) {
 	if t.t == nil {
-		panic("Reset called on uninitialized relativetime.Timer")
+		panic("Stop called on uninitialized relativetime.Timer")
 	}
 
 	t.s.stopWaker()
