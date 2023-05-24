@@ -71,8 +71,7 @@ const (
 	TimeOnly   = "15:04:05"
 )
 
-// Wraps package level functions from `time` to implement
-// `clock.LocatedClock[time.Time]`
+// Wraps package level functions from `time`
 type Clock struct{}
 
 func NewClock() Clock {
