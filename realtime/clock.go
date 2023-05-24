@@ -20,6 +20,10 @@ const (
 	Hour        = time.Hour
 )
 
+// Location constants
+var UTC = time.UTC
+var Local = time.Local
+
 // Month constants
 const (
 	January   = time.January
