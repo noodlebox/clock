@@ -62,8 +62,8 @@ func NewClock[T Time[T, D], D Duration, RT RTimer[T, D]](ref RClock[T, D, RT], a
 		ref:    ref,
 		active: false,
 		scale:  scale,
-		now:    ref.Now(),
-		rNow:   at,
+		now:    at,
+		rNow:   ref.Now(),
 	}
 	return
 }
