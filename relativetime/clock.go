@@ -2,6 +2,7 @@ package relativetime
 
 import (
 	"container/heap"
+	"sync"
 )
 
 // The minimal API needed to serve as a reference clock
@@ -55,6 +56,8 @@ type Clock[T Time[T, D], D Duration, RT RTimer[T, D]] struct {
 	queue queue[T, D]     // Upcoming events, in local time
 	waker RTimer[T, D]    // Interface used here for a default value of nil
 	sleep <-chan struct{} // Interrupts the waker, or signals its completion
+
+	mu sync.Mutex
 }
 
 func NewClock[T Time[T, D], D Duration, RT RTimer[T, D]](ref RClock[T, D, RT], at T, scale float64) (c *Clock[T, D, RT]) {
@@ -67,6 +70,9 @@ func NewClock[T Time[T, D], D Duration, RT RTimer[T, D]](ref RClock[T, D, RT], a
 	}
 	return
 }
+
+func (c *Clock[T, D, RT]) lock()   { c.mu.Lock() }
+func (c *Clock[T, D, RT]) unlock() { c.mu.Unlock() }
 
 // Syncing with the reference clock is done lazily. This method updates the
 // sync points based on difference between a new reference time and the last
@@ -189,67 +195,84 @@ func (c *Clock[T, D, RT]) reschedule(t *timer[T, D]) {
 // This is the other way for the reference sync point to advance, aside from
 // calling Now() on the reference timer.
 func (c *Clock[T, D, RT]) wake(now T) {
+	c.lock()
 	// Don't step backwards in case this callback ends up delayed
 	if now.After(c.rNow) {
 		c.advanceRef(now)
 	}
 
 	c.checkSchedule()
+	c.unlock()
 }
 
 // Start() begins tracking the reference clock, if not already running.
 // It is fine to call Start() on a clock that is already running.
 func (c *Clock[T, D, RT]) Start() {
+	c.lock()
 	// Sync up first
 	c.advanceRef(c.ref.Now())
 
 	c.active = true
 	c.stopWaker()
 	c.resetWaker()
+	c.unlock()
 }
 
 // Stop() stops tracking the reference clock, if currently running.
 // It is fine to call Stop() on a clock that is not running.
 func (c *Clock[T, D, RT]) Stop() {
+	c.lock()
 	// Sync up first
 	c.advanceRef(c.ref.Now())
 
 	c.active = false
 	c.stopWaker()
+	c.unlock()
 }
 
-func (c *Clock[T, D, RT]) Active() bool {
-	return c.active
+func (c *Clock[T, D, RT]) Active() (active bool) {
+	c.lock()
+	active = c.active
+	c.unlock()
+	return
 }
 
 func (c *Clock[T, D, RT]) SetScale(scale float64) {
+	c.lock()
 	// Sync up first
 	c.advanceRef(c.ref.Now())
 
 	c.scale = scale
 	c.stopWaker()
 	c.resetWaker()
+	c.unlock()
 }
 
-func (c *Clock[T, D, RT]) Scale() float64 {
-	return c.scale
+func (c *Clock[T, D, RT]) Scale() (scale float64) {
+	c.lock()
+	scale = c.scale
+	c.unlock()
+	return
 }
 
 // Set the local sync point with the current reference time to `now`
 // If any timers are active, a value of `now` earlier than the previous
 // setting may lead to undefined behavior.
 func (c *Clock[T, D, RT]) Set(now T) {
+	c.lock()
 	// Reset sync point to given time
 	c.now, c.rNow = now, c.ref.Now()
 
 	// Check whether we're due for any scheduled events
 	c.checkSchedule()
+	c.unlock()
 }
 
 // Advance the local time forward by `dt`.
 // If any timers are active, a negative value for dt may lead to undefined
 // behavior.
 func (c *Clock[T, D, RT]) Step(dt D) {
+	c.lock()
 	// Sync up first
 	c.advanceRef(c.ref.Now())
 
@@ -257,6 +280,7 @@ func (c *Clock[T, D, RT]) Step(dt D) {
 
 	// Check whether we're due for any scheduled events
 	c.checkSchedule()
+	c.unlock()
 }
 
 // Use reference clock to implement Seconds method, to allow a relative clock
@@ -265,11 +289,14 @@ func (c *Clock[T, D, RT]) Seconds(n float64) D {
 	return c.ref.Seconds(n)
 }
 
-func (c *Clock[T, D, RT]) Now() T {
+func (c *Clock[T, D, RT]) Now() (now T) {
+	c.lock()
 	// Sync up
 	c.advanceRef(c.ref.Now())
 
-	return c.now
+	now = c.now
+	c.unlock()
+	return
 }
 
 func (c *Clock[T, D, RT]) Since(t T) D {
@@ -285,6 +312,7 @@ func (c *Clock[T, D, RT]) Sleep(d D) {
 		return
 	}
 
+	c.lock()
 	// Sync up
 	c.advanceRef(c.ref.Now())
 
@@ -295,6 +323,7 @@ func (c *Clock[T, D, RT]) Sleep(d D) {
 		when: c.now.Add(d),
 	})
 	c.resetWaker()
+	c.unlock()
 	<-ch
 }
 
@@ -304,6 +333,8 @@ type scheduler[T Time[T, D], D Duration] interface {
 	reschedule(t *timer[T, D])
 	stopWaker()
 	resetWaker()
+	lock()
+	unlock()
 	Now() T
 }
 
@@ -325,11 +356,15 @@ func (t *Ticker[T, D]) Reset(d D) {
 		panic("Reset called on uninitialized relativetime.Ticker")
 	}
 
+	now := t.s.Now()
+
+	t.s.lock()
 	t.s.stopWaker()
-	t.t.when = t.s.Now().Add(d)
+	t.t.when = now.Add(d)
 	t.t.period = d
 	t.s.reschedule(t.t)
 	t.s.resetWaker()
+	t.s.unlock()
 }
 
 func (t *Ticker[T, D]) Stop() {
@@ -337,9 +372,11 @@ func (t *Ticker[T, D]) Stop() {
 		panic("Stop called on uninitialized relativetime.Ticker")
 	}
 
+	t.s.lock()
 	t.s.stopWaker()
 	t.s.unschedule(t.t)
 	t.s.resetWaker()
+	t.s.unlock()
 }
 
 func (c *Clock[T, D, RT]) NewTicker(d D) *Ticker[T, D] {
@@ -347,6 +384,7 @@ func (c *Clock[T, D, RT]) NewTicker(d D) *Ticker[T, D] {
 		panic("non-positive interval for relativetime.Clock.NewTicker")
 	}
 
+	c.lock()
 	// Sync up
 	c.advanceRef(c.ref.Now())
 
@@ -364,6 +402,7 @@ func (c *Clock[T, D, RT]) NewTicker(d D) *Ticker[T, D] {
 	c.stopWaker()
 	c.schedule(tm)
 	c.resetWaker()
+	c.unlock()
 	return &Ticker[T, D]{ch, tm, c}
 }
 
@@ -390,11 +429,15 @@ func (t *Timer[T, D]) Reset(d D) (active bool) {
 		panic("Reset called on uninitialized relativetime.Timer")
 	}
 
+	now := t.s.Now()
+
+	t.s.lock()
 	t.s.stopWaker()
-	t.t.when = t.s.Now().Add(d)
+	t.t.when = now.Add(d)
 	active = (t.t.index != -1)
 	t.s.reschedule(t.t)
 	t.s.resetWaker()
+	t.s.unlock()
 	return
 }
 
@@ -403,14 +446,17 @@ func (t *Timer[T, D]) Stop() (active bool) {
 		panic("Stop called on uninitialized relativetime.Timer")
 	}
 
+	t.s.lock()
 	t.s.stopWaker()
 	active = (t.t.index != -1)
 	t.s.unschedule(t.t)
 	t.s.resetWaker()
+	t.s.unlock()
 	return
 }
 
 func (c *Clock[T, D, RT]) NewTimer(d D) *Timer[T, D] {
+	c.lock()
 	// Sync up
 	c.advanceRef(c.ref.Now())
 
@@ -427,6 +473,7 @@ func (c *Clock[T, D, RT]) NewTimer(d D) *Timer[T, D] {
 	c.stopWaker()
 	c.schedule(tm)
 	c.resetWaker()
+	c.unlock()
 	return &Timer[T, D]{ch, tm, c}
 }
 
@@ -435,6 +482,7 @@ func (c *Clock[T, D, RT]) After(d D) <-chan T {
 }
 
 func (c *Clock[T, D, RT]) AfterFunc(d D, f func()) *Timer[T, D] {
+	c.lock()
 	// Sync up
 	c.advanceRef(c.ref.Now())
 
@@ -445,5 +493,6 @@ func (c *Clock[T, D, RT]) AfterFunc(d D, f func()) *Timer[T, D] {
 	c.stopWaker()
 	c.schedule(tm)
 	c.resetWaker()
+	c.unlock()
 	return &Timer[T, D]{t: tm, s: c}
 }
