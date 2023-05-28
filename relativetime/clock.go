@@ -53,9 +53,10 @@ type Clock[T Time[T, D], D Duration, RT RTimer[T, D]] struct {
 	active    bool
 	now, rNow T // last sync point
 
-	queue queue[T, D]     // Upcoming events, in local time
-	waker RTimer[T, D]    // Interface used here for a default value of nil
-	sleep <-chan struct{} // Interrupts the waker, or signals its completion
+	queue  queue[T, D]     // Upcoming events, in local time
+	waker  RTimer[T, D]    // Interface used here for a default value of nil
+	sleep  <-chan struct{} // Interrupts the waker, or signals its completion
+	nextAt T
 
 	mu sync.Mutex
 }
@@ -121,14 +122,25 @@ func (c *Clock[T, D, RT]) stopWaker() {
 
 func (c *Clock[T, D, RT]) resetWaker() {
 	if !c.active || c.scale == 0.0 {
+		c.stopWaker()
 		return
 	}
 
 	next := c.queue.peek()
 	if next == nil {
 		// Nothing currently scheduled
+		c.stopWaker()
 		return
 	}
+
+	if c.waker != nil && next.when.Equal(c.nextAt) {
+		// Waker already set to the correct time, let it be
+		return
+	}
+
+	c.nextAt = next.when
+	c.stopWaker()
+
 	// Duration on reference clock until next timer should trigger
 	dt := c.ref.Seconds(next.when.Sub(c.now).Seconds() / c.scale)
 
@@ -155,8 +167,6 @@ func (c *Clock[T, D, RT]) resetWaker() {
 
 // Check schedule for pending events that should trigger now.
 func (c *Clock[T, D, RT]) checkSchedule() {
-	c.stopWaker()
-
 	for t := c.queue.peek(); t != nil && t.when.Before(c.now); t = c.queue.peek() {
 		if t.period.Seconds() <= 0 {
 			c.unschedule(t)
@@ -213,7 +223,6 @@ func (c *Clock[T, D, RT]) Start() {
 	c.advanceRef(c.ref.Now())
 
 	c.active = true
-	c.stopWaker()
 	c.resetWaker()
 	c.unlock()
 }
@@ -226,7 +235,7 @@ func (c *Clock[T, D, RT]) Stop() {
 	c.advanceRef(c.ref.Now())
 
 	c.active = false
-	c.stopWaker()
+	c.resetWaker()
 	c.unlock()
 }
 
@@ -243,7 +252,6 @@ func (c *Clock[T, D, RT]) SetScale(scale float64) {
 	c.advanceRef(c.ref.Now())
 
 	c.scale = scale
-	c.stopWaker()
 	c.resetWaker()
 	c.unlock()
 }
@@ -317,7 +325,6 @@ func (c *Clock[T, D, RT]) Sleep(d D) {
 	c.advanceRef(c.ref.Now())
 
 	ch := make(chan struct{})
-	c.stopWaker()
 	c.schedule(&timer[T, D]{
 		f:    func(T) { close(ch) },
 		when: c.now.Add(d),
@@ -331,7 +338,6 @@ type scheduler[T Time[T, D], D Duration] interface {
 	schedule(t *timer[T, D])
 	unschedule(t *timer[T, D])
 	reschedule(t *timer[T, D])
-	stopWaker()
 	resetWaker()
 	lock()
 	unlock()
@@ -359,7 +365,6 @@ func (t *Ticker[T, D]) Reset(d D) {
 	now := t.s.Now()
 
 	t.s.lock()
-	t.s.stopWaker()
 	t.t.when = now.Add(d)
 	t.t.period = d
 	t.s.reschedule(t.t)
@@ -373,7 +378,6 @@ func (t *Ticker[T, D]) Stop() {
 	}
 
 	t.s.lock()
-	t.s.stopWaker()
 	t.s.unschedule(t.t)
 	t.s.resetWaker()
 	t.s.unlock()
@@ -399,7 +403,6 @@ func (c *Clock[T, D, RT]) NewTicker(d D) *Ticker[T, D] {
 		when:   c.now.Add(d),
 		period: d,
 	}
-	c.stopWaker()
 	c.schedule(tm)
 	c.resetWaker()
 	c.unlock()
@@ -432,7 +435,6 @@ func (t *Timer[T, D]) Reset(d D) (active bool) {
 	now := t.s.Now()
 
 	t.s.lock()
-	t.s.stopWaker()
 	t.t.when = now.Add(d)
 	active = (t.t.index != -1)
 	t.s.reschedule(t.t)
@@ -447,7 +449,6 @@ func (t *Timer[T, D]) Stop() (active bool) {
 	}
 
 	t.s.lock()
-	t.s.stopWaker()
 	active = (t.t.index != -1)
 	t.s.unschedule(t.t)
 	t.s.resetWaker()
@@ -470,7 +471,6 @@ func (c *Clock[T, D, RT]) NewTimer(d D) *Timer[T, D] {
 		},
 		when: c.now.Add(d),
 	}
-	c.stopWaker()
 	c.schedule(tm)
 	c.resetWaker()
 	c.unlock()
@@ -490,7 +490,6 @@ func (c *Clock[T, D, RT]) AfterFunc(d D, f func()) *Timer[T, D] {
 		f:    func(T) { go f() },
 		when: c.now.Add(d),
 	}
-	c.stopWaker()
 	c.schedule(tm)
 	c.resetWaker()
 	c.unlock()
