@@ -253,7 +253,7 @@ func (c *Clock[T, D, RT]) SetScale(scale float64) {
 	// Sync up first
 	c.advanceRef(c.ref.Now())
 
-	dirty := c.scale == scale // Did the setting change?
+	dirty := c.scale != scale // Did the setting change?
 	c.scale = scale
 	c.resetWaker(dirty)
 	c.unlock()
