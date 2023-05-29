@@ -56,7 +56,7 @@ type Clock[T Time[T, D], D Duration, RT RTimer[T, D]] struct {
 	queue  queue[T, D]     // Upcoming events, in local time
 	waker  RTimer[T, D]    // Interface used here for a default value of nil
 	sleep  <-chan struct{} // Interrupts the waker, or signals its completion
-	nextAt T
+	nextAt T               // Local time of next scheduled event
 
 	mu sync.Mutex
 }
@@ -120,7 +120,7 @@ func (c *Clock[T, D, RT]) stopWaker() {
 	}
 }
 
-func (c *Clock[T, D, RT]) resetWaker() {
+func (c *Clock[T, D, RT]) resetWaker(dirty bool) {
 	if !c.active || c.scale == 0.0 {
 		c.stopWaker()
 		return
@@ -133,7 +133,7 @@ func (c *Clock[T, D, RT]) resetWaker() {
 		return
 	}
 
-	if c.waker != nil && next.when.Equal(c.nextAt) {
+	if !dirty && c.waker != nil && next.when.Equal(c.nextAt) {
 		// Waker already set to the correct time, let it be
 		return
 	}
@@ -177,7 +177,7 @@ func (c *Clock[T, D, RT]) checkSchedule() {
 		t.f(c.now)
 	}
 
-	c.resetWaker()
+	c.resetWaker(false)
 }
 
 // stop the waker when modifying the queue then reset it afterwards
@@ -222,8 +222,9 @@ func (c *Clock[T, D, RT]) Start() {
 	// Sync up first
 	c.advanceRef(c.ref.Now())
 
+	dirty := c.active // Did the setting change?
 	c.active = true
-	c.resetWaker()
+	c.resetWaker(dirty)
 	c.unlock()
 }
 
@@ -234,8 +235,9 @@ func (c *Clock[T, D, RT]) Stop() {
 	// Sync up first
 	c.advanceRef(c.ref.Now())
 
+	dirty := !c.active // Did the setting change?
 	c.active = false
-	c.resetWaker()
+	c.resetWaker(dirty)
 	c.unlock()
 }
 
@@ -251,8 +253,9 @@ func (c *Clock[T, D, RT]) SetScale(scale float64) {
 	// Sync up first
 	c.advanceRef(c.ref.Now())
 
+	dirty := c.scale == scale // Did the setting change?
 	c.scale = scale
-	c.resetWaker()
+	c.resetWaker(dirty)
 	c.unlock()
 }
 
@@ -329,7 +332,7 @@ func (c *Clock[T, D, RT]) Sleep(d D) {
 		f:    func(T) { close(ch) },
 		when: c.now.Add(d),
 	})
-	c.resetWaker()
+	c.resetWaker(false)
 	c.unlock()
 	<-ch
 }
@@ -338,7 +341,7 @@ type scheduler[T Time[T, D], D Duration] interface {
 	schedule(t *timer[T, D])
 	unschedule(t *timer[T, D])
 	reschedule(t *timer[T, D])
-	resetWaker()
+	resetWaker(dirty bool)
 	lock()
 	unlock()
 	Now() T
@@ -368,7 +371,7 @@ func (t *Ticker[T, D]) Reset(d D) {
 	t.t.when = now.Add(d)
 	t.t.period = d
 	t.s.reschedule(t.t)
-	t.s.resetWaker()
+	t.s.resetWaker(false)
 	t.s.unlock()
 }
 
@@ -379,7 +382,7 @@ func (t *Ticker[T, D]) Stop() {
 
 	t.s.lock()
 	t.s.unschedule(t.t)
-	t.s.resetWaker()
+	t.s.resetWaker(false)
 	t.s.unlock()
 }
 
@@ -404,7 +407,7 @@ func (c *Clock[T, D, RT]) NewTicker(d D) *Ticker[T, D] {
 		period: d,
 	}
 	c.schedule(tm)
-	c.resetWaker()
+	c.resetWaker(false)
 	c.unlock()
 	return &Ticker[T, D]{ch, tm, c}
 }
@@ -438,7 +441,7 @@ func (t *Timer[T, D]) Reset(d D) (active bool) {
 	t.t.when = now.Add(d)
 	active = (t.t.index != -1)
 	t.s.reschedule(t.t)
-	t.s.resetWaker()
+	t.s.resetWaker(false)
 	t.s.unlock()
 	return
 }
@@ -451,7 +454,7 @@ func (t *Timer[T, D]) Stop() (active bool) {
 	t.s.lock()
 	active = (t.t.index != -1)
 	t.s.unschedule(t.t)
-	t.s.resetWaker()
+	t.s.resetWaker(false)
 	t.s.unlock()
 	return
 }
@@ -472,7 +475,7 @@ func (c *Clock[T, D, RT]) NewTimer(d D) *Timer[T, D] {
 		when: c.now.Add(d),
 	}
 	c.schedule(tm)
-	c.resetWaker()
+	c.resetWaker(false)
 	c.unlock()
 	return &Timer[T, D]{ch, tm, c}
 }
@@ -491,7 +494,7 @@ func (c *Clock[T, D, RT]) AfterFunc(d D, f func()) *Timer[T, D] {
 		when: c.now.Add(d),
 	}
 	c.schedule(tm)
-	c.resetWaker()
+	c.resetWaker(false)
 	c.unlock()
 	return &Timer[T, D]{t: tm, s: c}
 }
