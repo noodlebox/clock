@@ -9,6 +9,7 @@ type Duration = time.Duration
 type Location = time.Location
 type Month = time.Month
 type Weekday = time.Weekday
+type ParseError = time.ParseError
 
 // Duration constants
 const (
@@ -196,4 +197,18 @@ func (Clock) UnixMilli(msec int64) Time {
 
 func (Clock) UnixNano(nsec int64) Time {
 	return time.Unix(0, nsec)
+}
+
+// Location functions
+
+func (Clock) FixedZone(name string, offset int) *Location {
+	return time.FixedZone(name, offset)
+}
+
+func (Clock) LoadLocation(name string) (*Location, error) {
+	return time.LoadLocation(name)
+}
+
+func (Clock) LoadLocationFromTZData(name string, data []byte) (*Location, error) {
+	return time.LoadLocationFromTZData(name, data)
 }

@@ -10,6 +10,7 @@ type Duration = realtime.Duration
 type Location = realtime.Location
 type Month = realtime.Month
 type Weekday = realtime.Weekday
+type ParseError = realtime.ParseError
 type Timer = relativetime.Timer[Time, Duration]
 type Ticker = relativetime.Ticker[Time, Duration]
 
@@ -117,3 +118,9 @@ func UnixMicro(usec int64) Time             { return clock.UnixMicro(usec) }
 func UnixMilli(msec int64) Time             { return clock.UnixMilli(msec) }
 func AfterFunc(d Duration, f func()) *Timer { return clock.AfterFunc(d, f) }
 func NewTimer(d Duration) *Timer            { return clock.NewTimer(d) }
+
+func FixedZone(name string, offset int) *Location { return clock.FixedZone(name, offset) }
+func LoadLocation(name string) (*Location, error) { return clock.LoadLocation(name) }
+func LoadLocationFromTZData(name string, data []byte) (*Location, error) {
+	return clock.LoadLocationFromTZData(name, data)
+}
