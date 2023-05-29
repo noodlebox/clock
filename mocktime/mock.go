@@ -89,6 +89,14 @@ func init() {
 	clock.Start()
 }
 
+func Start()                 { clock.Start() }
+func Stop()                  { clock.Stop() }
+func Active()                { clock.Active() }
+func SetScale(scale float64) { clock.SetScale(scale) }
+func Scale() float64         { return clock.Scale() }
+func Set(now Time)           { clock.Set(now) }
+func Step(dt Duration)       { clock.Step(dt) }
+
 func After(d Duration) <-chan Time             { return clock.After(d) }
 func Sleep(d Duration)                         { clock.Sleep(d) }
 func Tick(d Duration) <-chan Time              { return clock.Tick(d) }
