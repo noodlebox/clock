@@ -1,42 +1,58 @@
 package steppedtime
 
+import (
+	"sync"
+)
+
 type Clock struct {
 	now   Time
 	queue queue
+
+	mu sync.Mutex
 }
 
 func NewClock() *Clock {
 	return &Clock{}
 }
 
+func (c *Clock) lock()   { c.mu.Lock() }
+func (c *Clock) unlock() { c.mu.Unlock() }
+
 // If any timers are active, a value of `now` earlier than the previous
 // setting may lead to undefined behavior.
 func (c *Clock) Set(now Time) {
+	c.lock()
 	c.now = now
 
 	// Check whether we're due for any scheduled events
 	c.checkSchedule()
+	c.unlock()
 }
 
 // If any timers are active, a negative value for dt may lead to undefined
 // behavior.
 func (c *Clock) Step(dt Duration) {
+	c.lock()
 	c.now = c.now.Add(dt)
 
 	// Check whether we're due for any scheduled events
 	c.checkSchedule()
+	c.unlock()
 }
 
-func (c *Clock) Now() Time {
-	return c.now
+func (c *Clock) Now() (now Time) {
+	c.lock()
+	now = c.now
+	c.unlock()
+	return
 }
 
 func (c *Clock) Since(t Time) Duration {
-	return c.now.Sub(t)
+	return c.Now().Sub(t)
 }
 
 func (c *Clock) Until(t Time) Duration {
-	return t.Sub(c.now)
+	return t.Sub(c.Now())
 }
 
 func (c *Clock) Sleep(d Duration) {
@@ -45,10 +61,12 @@ func (c *Clock) Sleep(d Duration) {
 	}
 
 	ch := make(chan struct{})
+	c.lock()
 	c.schedule(&timer{
 		f:    func(Time) { close(ch) },
 		when: c.now.Add(d),
 	})
+	c.unlock()
 	<-ch
 }
 
@@ -70,9 +88,11 @@ func (t *Ticker) Reset(d Duration) {
 		panic("Reset called on uninitialized steppedtime.Ticker")
 	}
 
+	t.s.lock()
 	t.t.when = t.s.now.Add(d)
 	t.t.period = d
 	t.s.reschedule(t.t)
+	t.s.unlock()
 }
 
 func (t *Ticker) Stop() {
@@ -80,7 +100,9 @@ func (t *Ticker) Stop() {
 		panic("Stop called on uninitialized steppedtime.Ticker")
 	}
 
+	t.s.lock()
 	t.s.unschedule(t.t)
+	t.s.unlock()
 }
 
 func (c *Clock) NewTicker(d Duration) *Ticker {
@@ -89,6 +111,7 @@ func (c *Clock) NewTicker(d Duration) *Ticker {
 	}
 
 	ch := make(chan Time, 1)
+	c.lock()
 	tm := &timer{
 		f: func(when Time) {
 			select {
@@ -100,6 +123,7 @@ func (c *Clock) NewTicker(d Duration) *Ticker {
 		period: d,
 	}
 	c.schedule(tm)
+	c.unlock()
 	return &Ticker{ch, tm, c}
 }
 
@@ -126,9 +150,11 @@ func (t *Timer) Reset(d Duration) (active bool) {
 		panic("Reset called on uninitialized steppedtime.Timer")
 	}
 
+	t.s.lock()
 	t.t.when = t.s.now.Add(d)
 	active = (t.t.index != -1)
 	t.s.reschedule(t.t)
+	t.s.unlock()
 	return
 }
 
@@ -137,13 +163,16 @@ func (t *Timer) Stop() (active bool) {
 		panic("Stop called on uninitialized steppedtime.Timer")
 	}
 
+	t.s.lock()
 	active = (t.t.index != -1)
 	t.s.unschedule(t.t)
+	t.s.unlock()
 	return
 }
 
 func (c *Clock) NewTimer(d Duration) *Timer {
 	ch := make(chan Time, 1)
+	c.lock()
 	tm := &timer{
 		f: func(when Time) {
 			select {
@@ -154,6 +183,7 @@ func (c *Clock) NewTimer(d Duration) *Timer {
 		when: c.now.Add(d),
 	}
 	c.schedule(tm)
+	c.unlock()
 	return &Timer{ch, tm, c}
 }
 
@@ -162,10 +192,12 @@ func (c *Clock) After(d Duration) <-chan Time {
 }
 
 func (c *Clock) AfterFunc(d Duration, f func()) *Timer {
+	c.lock()
 	tm := &timer{
 		f:    func(Time) { go f() },
 		when: c.now.Add(d),
 	}
 	c.schedule(tm)
+	c.unlock()
 	return &Timer{t: tm, s: c}
 }
