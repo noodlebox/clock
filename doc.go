@@ -18,7 +18,7 @@
 //
 //   mocktime uses the relativetime and realtime packages to provide a drop
 //   in replacement for a realtime clock that may be controlled as a relative
-//   clock.
+//   clock. It also provides package-level functions matching builtin `time`.
 //
 // `Clock`s created by this package should generally behave monotonically,
 // unless explicitly set or stepped backwards. Their public interface should
