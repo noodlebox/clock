@@ -3,45 +3,10 @@ package mocktime_test
 import (
 	"fmt"
 	"runtime"
-	"sync"
 	"testing"
 
 	. "github.com/noodlebox/clock/mocktime"
 )
-
-func benchmark(b *testing.B, bench func(n int)) {
-
-	// Create equal number of garbage timers on each P before starting
-	// the benchmark.
-	var wg sync.WaitGroup
-	garbageAll := make([][]*Timer, runtime.GOMAXPROCS(0))
-	for i := range garbageAll {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			garbage := make([]*Timer, 1<<15)
-			for j := range garbage {
-				garbage[j] = AfterFunc(Hour, nil)
-			}
-			garbageAll[i] = garbage
-		}(i)
-	}
-	wg.Wait()
-
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			bench(1000)
-		}
-	})
-	b.StopTimer()
-
-	for _, garbage := range garbageAll {
-		for _, t := range garbage {
-			t.Stop()
-		}
-	}
-}
 
 // These tests are mostly copied from src/time/tick_test.go
 
