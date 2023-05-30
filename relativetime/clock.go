@@ -222,7 +222,7 @@ func (c *Clock[T, D, RT]) Start() {
 	// Sync up first
 	c.advanceRef(c.ref.Now())
 
-	dirty := c.active // Did the setting change?
+	dirty := !c.active // Did the setting change?
 	c.active = true
 	c.resetWaker(dirty)
 	c.unlock()
@@ -235,7 +235,7 @@ func (c *Clock[T, D, RT]) Stop() {
 	// Sync up first
 	c.advanceRef(c.ref.Now())
 
-	dirty := !c.active // Did the setting change?
+	dirty := c.active // Did the setting change?
 	c.active = false
 	c.resetWaker(dirty)
 	c.unlock()
