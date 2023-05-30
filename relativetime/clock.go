@@ -167,7 +167,7 @@ func (c *Clock[T, D, RT]) resetWaker(dirty bool) {
 
 // Check schedule for pending events that should trigger now.
 func (c *Clock[T, D, RT]) checkSchedule() {
-	for t := c.queue.peek(); t != nil && t.when.Before(c.now); t = c.queue.peek() {
+	for t := c.queue.peek(); t != nil && !t.when.After(c.now); t = c.queue.peek() {
 		if t.period.Seconds() <= 0 {
 			c.unschedule(t)
 		} else {
