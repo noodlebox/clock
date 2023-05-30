@@ -1,6 +1,8 @@
 package mocktime
 
 import (
+	"runtime"
+
 	"github.com/noodlebox/clock/realtime"
 	"github.com/noodlebox/clock/relativetime"
 )
@@ -27,5 +29,23 @@ func NewClockAt(at Time) Clock {
 	return Clock{
 		relativetime.NewClock[Time, Duration, *realtime.Timer](rclock, at, 1.0),
 		baseClock{rclock}, // zero value would work, but be explicit for clarity
+	}
+}
+
+// Step forward to trigger timers until there are no timers left
+func (c Clock) Fastforward() {
+	active := c.Active()
+	c.Stop()
+	for when := c.NextAt(); !when.IsZero(); when = c.NextAt() {
+		dt := c.Until(when)
+		if dt < 0 {
+			// Ensure we're never stepping backwards
+			dt = 0
+		}
+		c.Step(dt)
+		runtime.Gosched()
+	}
+	if active {
+		c.Start()
 	}
 }

@@ -294,6 +294,16 @@ func (c *Clock[T, D, RT]) Step(dt D) {
 	c.unlock()
 }
 
+// Returns the time at which the next scheduled timer should trigger
+// If no timers are scheduled, returns a zero value
+func (c *Clock[T, D, RT]) NextAt() (when T) {
+	next := c.queue.peek()
+	if next == nil {
+		return
+	}
+	return next.when
+}
+
 // Use reference clock to implement Seconds method, to allow a relative clock
 // to satisfy the reference clock interface itself.
 func (c *Clock[T, D, RT]) Seconds(n float64) D {
