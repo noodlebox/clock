@@ -11,12 +11,14 @@ type baseClock struct {
 	realtime.Clock
 }
 
-// Inherits methods from relative clock, falling back to real clock for the rest
+// Clock provides a drop in replacement for [realtime.Clock], but with
+// additional methods to allow direct control over its behavior.
 type Clock struct {
 	*relativetime.Clock[Time, Duration, *realtime.Timer]
 	baseClock // embed within a struct to ensure lower precedence
 }
 
+// NewClock returns a new Clock set to the current time.
 func NewClock() Clock {
 	rclock := realtime.NewClock()
 	return Clock{
@@ -24,6 +26,8 @@ func NewClock() Clock {
 		baseClock{rclock}, // zero value would work, but be explicit for clarity
 	}
 }
+
+// NewClockAt returns a new Clock set to the the time, at.
 func NewClockAt(at Time) Clock {
 	rclock := realtime.NewClock()
 	return Clock{
@@ -32,7 +36,8 @@ func NewClockAt(at Time) Clock {
 	}
 }
 
-// Step forward to trigger timers until there are no timers left
+// Fastforward steps forward to trigger timers until there are no timers left
+// to trigger.
 func (c Clock) Fastforward() {
 	active := c.Active()
 	c.Stop()
