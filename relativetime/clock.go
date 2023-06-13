@@ -264,7 +264,9 @@ func (w *waker[T, D, RT]) reschedule(t *timer[T, D]) {
 // This is the other way for the reference sync point to advance, aside from
 // calling Now() on the reference timer.
 func (w *waker[T, D, RT]) wake(now T) {
-	now = w.Now()
+	w.rlock()
+	now = w.nowLocal(now)
+	w.runlock()
 	w.lock()
 	w.checkSchedule(now)
 	w.unlock()
