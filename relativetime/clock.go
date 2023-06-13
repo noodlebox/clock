@@ -123,11 +123,12 @@ func (c *Clock[T, D, RT]) resetWakers(dirty bool) {
 	for i := 0; i < nwakers; i++ {
 		wakers[i] = <-c.waker
 	}
+	now := c.Now()
 	for _, w := range wakers {
 		w := w
 		go func() {
 			w.lock()
-			w.reset(dirty)
+			w.reset(now, dirty)
 			w.unlock()
 			c.waker <- w
 		}()
@@ -139,11 +140,12 @@ func (c *Clock[T, D, RT]) checkWakers() {
 	for i := 0; i < nwakers; i++ {
 		wakers[i] = <-c.waker
 	}
+	now := c.Now()
 	for _, w := range wakers {
 		w := w
 		go func() {
 			w.lock()
-			w.checkSchedule()
+			w.checkSchedule(now)
 			w.unlock()
 			c.waker <- w
 		}()
@@ -174,8 +176,11 @@ func (w *waker[T, D, RT]) stop() {
 	}
 }
 
-func (w *waker[T, D, RT]) reset(dirty bool) {
-	if !w.Active() || w.Scale() == 0.0 {
+func (w *waker[T, D, RT]) reset(now T, dirty bool) {
+	w.rlock()
+	active, scale := w.active, w.scale
+	w.runlock()
+	if !active || scale == 0.0 {
 		w.stop()
 		return
 	}
@@ -196,7 +201,7 @@ func (w *waker[T, D, RT]) reset(dirty bool) {
 	w.stop()
 
 	// Duration on reference clock until next timer should trigger
-	dt := w.ref.Seconds(next.when.Sub(w.Now()).Seconds() / w.Scale())
+	dt := w.ref.Seconds(next.when.Sub(now).Seconds() / scale)
 
 	if w.waker == nil {
 		w.waker = w.ref.NewTimer(dt)
@@ -220,8 +225,7 @@ func (w *waker[T, D, RT]) reset(dirty bool) {
 }
 
 // Check schedule for pending events that should trigger now.
-func (w *waker[T, D, RT]) checkSchedule() {
-	now := w.Now()
+func (w *waker[T, D, RT]) checkSchedule(now T) {
 	for t := w.queue.peek(); t != nil && !t.when.After(now); t = w.queue.peek() {
 		if t.period.Seconds() <= 0 {
 			w.unschedule(t)
@@ -232,7 +236,7 @@ func (w *waker[T, D, RT]) checkSchedule() {
 		t.f(now)
 	}
 
-	w.reset(false)
+	w.reset(now, false)
 }
 
 // stop the waker when modifying the queue then reset it afterwards
@@ -260,8 +264,9 @@ func (w *waker[T, D, RT]) reschedule(t *timer[T, D]) {
 // This is the other way for the reference sync point to advance, aside from
 // calling Now() on the reference timer.
 func (w *waker[T, D, RT]) wake(now T) {
+	now = w.Now()
 	w.lock()
-	w.checkSchedule()
+	w.checkSchedule(now)
 	w.unlock()
 }
 
@@ -398,16 +403,17 @@ func (c *Clock[T, D, RT]) Sleep(d D) {
 		return
 	}
 
+	now := c.Now()
 	ch := make(chan struct{})
 	tm := &timer[T, D]{
 		f:    func(T) { close(ch) },
-		when: c.Now().Add(d),
+		when: now.Add(d),
 	}
 	w := <-c.waker
 	w.lock()
 	w.schedule(tm)
 	if tm.index == 0 {
-		w.reset(false)
+		w.reset(now, false)
 	}
 	w.unlock()
 	c.waker <- w
@@ -418,7 +424,7 @@ type scheduler[T Time[T, D], D Duration] interface {
 	schedule(t *timer[T, D])
 	unschedule(t *timer[T, D])
 	reschedule(t *timer[T, D])
-	reset(dirty bool)
+	reset(now T, dirty bool)
 	lock()
 	unlock()
 	Now() T
@@ -448,13 +454,14 @@ func (t *Ticker[T, D]) Reset(d D) {
 		panic("Reset called on uninitialized relativetime.Ticker")
 	}
 
+	now := t.s.Now()
 	t.s.lock()
-	t.t.when = t.s.Now().Add(d)
+	t.t.when = now.Add(d)
 	t.t.period = d
 	isNext := t.t.index == 0
 	t.s.reschedule(t.t)
 	if isNext || t.t.index == 0 {
-		t.s.reset(false)
+		t.s.reset(now, false)
 	}
 	t.s.unlock()
 }
@@ -467,11 +474,12 @@ func (t *Ticker[T, D]) Stop() {
 		panic("Stop called on uninitialized relativetime.Ticker")
 	}
 
+	now := t.s.Now()
 	t.s.lock()
 	isNext := t.t.index == 0
 	t.s.unschedule(t.t)
 	if isNext {
-		t.s.reset(false)
+		t.s.reset(now, false)
 	}
 	t.s.unlock()
 }
@@ -487,6 +495,7 @@ func (c *Clock[T, D, RT]) NewTicker(d D) *Ticker[T, D] {
 		panic("non-positive interval for relativetime.Clock.NewTicker")
 	}
 
+	now := c.Now()
 	ch := make(chan T, 1)
 	tm := &timer[T, D]{
 		f: func(when T) {
@@ -495,14 +504,14 @@ func (c *Clock[T, D, RT]) NewTicker(d D) *Ticker[T, D] {
 			default:
 			}
 		},
-		when:   c.Now().Add(d),
+		when:   now.Add(d),
 		period: d,
 	}
 	w := <-c.waker
 	w.lock()
 	w.schedule(tm)
 	if tm.index == 0 {
-		w.reset(false)
+		w.reset(now, false)
 	}
 	w.unlock()
 	c.waker <- w
@@ -544,15 +553,16 @@ func (t *Timer[T, D]) Reset(d D) (active bool) {
 		panic("Reset called on uninitialized relativetime.Timer")
 	}
 
+	now := t.s.Now()
 	t.s.lock()
 
 	active = (t.t.index != -1)
 
-	t.t.when = t.s.Now().Add(d)
+	t.t.when = now.Add(d)
 	isNext := t.t.index == 0
 	t.s.reschedule(t.t)
 	if isNext || t.t.index == 0 {
-		t.s.reset(false)
+		t.s.reset(now, false)
 	}
 	t.s.unlock()
 
@@ -568,6 +578,7 @@ func (t *Timer[T, D]) Stop() (active bool) {
 		panic("Stop called on uninitialized relativetime.Timer")
 	}
 
+	now := t.s.Now()
 	t.s.lock()
 
 	active = (t.t.index != -1)
@@ -575,7 +586,7 @@ func (t *Timer[T, D]) Stop() (active bool) {
 	isNext := t.t.index == 0
 	t.s.unschedule(t.t)
 	if isNext {
-		t.s.reset(false)
+		t.s.reset(now, false)
 	}
 	t.s.unlock()
 
@@ -585,6 +596,7 @@ func (t *Timer[T, D]) Stop() (active bool) {
 // NewTimer creates a new Timer that will send the current time on its
 // channel after at least duration d.
 func (c *Clock[T, D, RT]) NewTimer(d D) *Timer[T, D] {
+	now := c.Now()
 	ch := make(chan T, 1)
 	tm := &timer[T, D]{
 		f: func(when T) {
@@ -593,13 +605,13 @@ func (c *Clock[T, D, RT]) NewTimer(d D) *Timer[T, D] {
 			default:
 			}
 		},
-		when: c.Now().Add(d),
+		when: now.Add(d),
 	}
 	w := <-c.waker
 	w.lock()
 	w.schedule(tm)
 	if tm.index == 0 {
-		w.reset(false)
+		w.reset(now, false)
 	}
 	w.unlock()
 	c.waker <- w
@@ -619,15 +631,16 @@ func (c *Clock[T, D, RT]) After(d D) <-chan T {
 // goroutine. It returns a Timer that can be used to cancel the call using
 // its Stop method.
 func (c *Clock[T, D, RT]) AfterFunc(d D, f func()) *Timer[T, D] {
+	now := c.Now()
 	tm := &timer[T, D]{
 		f:    func(T) { go f() },
-		when: c.Now().Add(d),
+		when: now.Add(d),
 	}
 	w := <-c.waker
 	w.lock()
 	w.schedule(tm)
 	if tm.index == 0 {
-		w.reset(false)
+		w.reset(now, false)
 	}
 	w.unlock()
 	c.waker <- w
