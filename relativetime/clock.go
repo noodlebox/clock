@@ -123,7 +123,7 @@ func (c *Clock[T, D, RT]) resetWakers(dirty bool) {
 	for i := 0; i < nwakers; i++ {
 		wakers[i] = <-c.waker
 	}
-	now := c.Now()
+	now := c.now
 	for _, w := range wakers {
 		w := w
 		go func() {
@@ -140,7 +140,7 @@ func (c *Clock[T, D, RT]) checkWakers() {
 	for i := 0; i < nwakers; i++ {
 		wakers[i] = <-c.waker
 	}
-	now := c.Now()
+	now := c.now
 	for _, w := range wakers {
 		w := w
 		go func() {
@@ -279,9 +279,9 @@ func (c *Clock[T, D, RT]) Start() {
 
 	dirty := !c.active // Did the setting change?
 	c.active = true
-	c.unlock()
 
 	c.resetWakers(dirty)
+	c.unlock()
 }
 
 // Stop stops tracking the reference clock, if currently running. It is fine
@@ -293,9 +293,9 @@ func (c *Clock[T, D, RT]) Stop() {
 
 	dirty := c.active // Did the setting change?
 	c.active = false
-	c.unlock()
 
 	c.resetWakers(dirty)
+	c.unlock()
 }
 
 // Active returns true if currently tracking the reference clock.
@@ -314,9 +314,9 @@ func (c *Clock[T, D, RT]) SetScale(scale float64) {
 
 	dirty := c.scale != scale // Did the setting change?
 	c.scale = scale
-	c.unlock()
 
 	c.resetWakers(dirty)
+	c.unlock()
 }
 
 // Scale returns the scaling factor for tracking the reference clock.
@@ -335,10 +335,9 @@ func (c *Clock[T, D, RT]) Set(now T) {
 	// Reset sync point to given time
 	c.now, c.rNow = now, c.ref.Now()
 
-	c.unlock()
-
 	// Check whether we're due for any scheduled events
 	c.checkWakers()
+	c.unlock()
 }
 
 // Step advances the local time forward by dt. If any timers are active, a
@@ -350,10 +349,9 @@ func (c *Clock[T, D, RT]) Step(dt D) {
 
 	c.now = c.now.Add(dt)
 
-	c.unlock()
-
 	// Check whether we're due for any scheduled events
 	c.checkWakers()
+	c.unlock()
 }
 
 // NextAt returns the time at which the next scheduled timer should trigger.
