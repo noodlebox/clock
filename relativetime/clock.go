@@ -10,7 +10,7 @@ import (
 type RClock[T Time[T, D], D Duration, TM RTimer[T, D]] interface {
 	Now() T
 	Seconds(float64) D
-	NewTimer(D) TM
+	AfterFunc(D, func()) TM
 }
 
 // RTimer is a generic interface for the minimal API needed for a reference
@@ -38,10 +38,9 @@ type Duration interface {
 }
 
 type waker[T Time[T, D], D Duration, RT RTimer[T, D]] struct {
-	queue  queue[T, D]     // Upcoming events, in local time
-	waker  RTimer[T, D]    // Interface used here for a default value of nil
-	sleep  <-chan struct{} // Interrupts the waker, or signals its completion
-	wakeAt T               // Local time of next scheduled waking
+	queue  queue[T, D]  // Upcoming events, in local time
+	waker  RTimer[T, D] // Interface used here for a default value of nil
+	wakeAt T            // Local time of next scheduled waking
 	mu     sync.Mutex
 	*Clock[T, D, RT]
 }
@@ -159,21 +158,7 @@ func (w *waker[T, D, RT]) stop() {
 	if w.waker == nil {
 		return
 	}
-
-	// Interrupt waker routine if still running
-	select {
-	case _, ok := <-w.sleep:
-		if !ok {
-			// Already ended (w.sleep closed)
-			return
-		}
-		// Did not consume from timer channel
-		if !w.waker.Stop() {
-			// Clear channel if timer has triggered but waker routine hadn't
-			// consumed it before being interrupted
-			<-w.waker.C()
-		}
-	}
+	w.waker.Stop()
 }
 
 func (w *waker[T, D, RT]) reset(now T, dirty bool) {
@@ -198,30 +183,15 @@ func (w *waker[T, D, RT]) reset(now T, dirty bool) {
 	}
 
 	w.wakeAt = next.when
-	w.stop()
 
 	// Duration on reference clock until next timer should trigger
 	dt := w.ref.Seconds(next.when.Sub(now).Seconds() / scale)
 
 	if w.waker == nil {
-		w.waker = w.ref.NewTimer(dt)
+		w.waker = w.ref.AfterFunc(dt, w.wake)
 	} else {
 		w.waker.Reset(dt)
 	}
-
-	sleep := make(chan struct{})
-	go func() {
-		select {
-		case t := <-w.waker.C():
-			// Advance clock to t and process any timers that should trigger
-			go w.wake(t)
-		case sleep <- struct{}{}:
-			// Interrupted
-		}
-		// Signal that we've finished
-		close(sleep)
-	}()
-	w.sleep = sleep
 }
 
 // Check schedule for pending events that should trigger now.
@@ -263,10 +233,8 @@ func (w *waker[T, D, RT]) reschedule(t *timer[T, D]) {
 // This method is called whenever a reference timer triggers.
 // This is the other way for the reference sync point to advance, aside from
 // calling Now() on the reference timer.
-func (w *waker[T, D, RT]) wake(now T) {
-	w.rlock()
-	now = w.nowLocal(now)
-	w.runlock()
+func (w *waker[T, D, RT]) wake() {
+	now := w.Now()
 	w.lock()
 	w.checkSchedule(now)
 	w.unlock()
