@@ -7,7 +7,7 @@ import (
 
 // RClock is a generic interface for the minimal API needed to serve as a
 // reference clock.
-type RClock[T Time[T, D], D Duration, TM RTimer[T, D]] interface {
+type RClock[T Time[T, D], D Duration, TM RTimer[D]] interface {
 	Now() T
 	Seconds(float64) D
 	AfterFunc(D, func()) TM
@@ -15,8 +15,7 @@ type RClock[T Time[T, D], D Duration, TM RTimer[T, D]] interface {
 
 // RTimer is a generic interface for the minimal API needed for a reference
 // Timer implementation.
-type RTimer[T Time[T, D], D Duration] interface {
-	C() <-chan T
+type RTimer[D Duration] interface {
 	Reset(d D) bool
 	Stop() bool
 }
@@ -37,10 +36,10 @@ type Duration interface {
 	Seconds() float64
 }
 
-type waker[T Time[T, D], D Duration, RT RTimer[T, D]] struct {
-	queue  queue[T, D]  // Upcoming events, in local time
-	waker  RTimer[T, D] // Interface used here for a default value of nil
-	wakeAt T            // Local time of next scheduled waking
+type waker[T Time[T, D], D Duration, RT RTimer[D]] struct {
+	queue  queue[T, D] // Upcoming events, in local time
+	waker  RTimer[D]   // Interface used here for a default value of nil
+	wakeAt T           // Local time of next scheduled waking
 	mu     sync.Mutex
 	*Clock[T, D, RT]
 }
@@ -55,7 +54,7 @@ const nwakers = 4
 // version of Go... See [github.com/noodlebox/clock/mocktime] package for an
 // example of using embedding with instantiated generic types for a drop in
 // replacement for a reference clock.
-type Clock[T Time[T, D], D Duration, RT RTimer[T, D]] struct {
+type Clock[T Time[T, D], D Duration, RT RTimer[D]] struct {
 	ref       RClock[T, D, RT]
 	scale     float64
 	active    bool
@@ -68,7 +67,7 @@ type Clock[T Time[T, D], D Duration, RT RTimer[T, D]] struct {
 
 // NewClock returns a new Clock set to at synchronized to the current time on
 // ref with a scale factor of scale.
-func NewClock[T Time[T, D], D Duration, RT RTimer[T, D]](ref RClock[T, D, RT], at T, scale float64) (c *Clock[T, D, RT]) {
+func NewClock[T Time[T, D], D Duration, RT RTimer[D]](ref RClock[T, D, RT], at T, scale float64) (c *Clock[T, D, RT]) {
 	c = &Clock[T, D, RT]{
 		ref:    ref,
 		active: false,
