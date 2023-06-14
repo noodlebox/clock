@@ -45,7 +45,7 @@ type waker[T Time[T, D], D Duration, RT RTimer[T, D]] struct {
 	*Clock[T, D, RT]
 }
 
-const nwakers = 8
+const nwakers = 4
 
 // Clock is a clock that tracks a reference clock with a configurable scaling
 // factor.
