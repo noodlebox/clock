@@ -67,7 +67,7 @@ func (q queue[T, D]) fix(t *timer[T, D]) {
 func (q queue[T, D]) siftup(t *timer[T, D]) {
 	i := t.index
 	for i > 0 {
-		p := (i - 1) / 2 // parent
+		p := (i - 1) / 4 // parent
 
 		// Swap needed in this direction?
 		if !q[p].when.After(t.when) {
@@ -94,17 +94,23 @@ func (q queue[T, D]) siftdown(t *timer[T, D]) {
 	i := t.index
 	n := len(q)
 	for {
-		c := i*2 + 1 // left child
+		c := i*4 + 1 // left child
+		c4 := c + 3  // right child
 		if c >= n {
 			// No children, can't go any lower from here
 			break
 		}
+		if c4 >= n {
+			c4 = n - 1
+		}
 		w := q[c].when
 
 		// If there are additional children, make sure to pick the favorite
-		if c2 := c + 1; c2 < n && w.After(q[c2].when) {
-			w = q[c2].when
-			c = c2
+		for i := c + 1; i <= c4; i++ {
+			if w.After(q[i].when) {
+				w = q[i].when
+				c = i
+			}
 		}
 
 		// Swap needed in this direction?
