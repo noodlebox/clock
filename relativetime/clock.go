@@ -28,6 +28,7 @@ type Time[T any, D Duration] interface {
 	After(T) bool
 	Before(T) bool
 	Equal(T) bool
+	IsZero() bool
 }
 
 // Duration is an interface for the minimal API needed for a Duration
@@ -60,9 +61,10 @@ type Clock[T Time[T, D], D Duration, RT RTimer[D]] struct {
 	active    bool
 	now, rNow T // last sync point
 
-	mu sync.RWMutex // Protects now and rNow
+	mu sync.RWMutex // Protects now, rNow, scale, and active
 
-	waker chan *waker[T, D, RT]
+	waker  chan *waker[T, D, RT]
+	wakers [nwakers]waker[T, D, RT]
 }
 
 // NewClock returns a new Clock set to at synchronized to the current time on
@@ -76,8 +78,9 @@ func NewClock[T Time[T, D], D Duration, RT RTimer[D]](ref RClock[T, D, RT], at T
 		rNow:   ref.Now(),
 		waker:  make(chan *waker[T, D, RT], nwakers),
 	}
-	for i := nwakers; i > 0; i-- {
-		c.waker <- &waker[T, D, RT]{Clock: c}
+	for i, _ := range c.wakers {
+		c.wakers[i].Clock = c
+		c.waker <- &c.wakers[i]
 	}
 	return
 }
@@ -116,36 +119,28 @@ func (c *Clock[T, D, RT]) nowLocal(now T) T {
 	return c.now.Add(dt)
 }
 
+// Should only be called after a proper sync, so c.now is valid.
 func (c *Clock[T, D, RT]) resetWakers(dirty bool) {
-	wakers := make([]*waker[T, D, RT], nwakers)
-	for i := 0; i < nwakers; i++ {
-		wakers[i] = <-c.waker
-	}
 	now := c.now
-	for _, w := range wakers {
-		w := w
+	for i, _ := range c.wakers {
+		w := &c.wakers[i]
 		go func() {
 			w.lock()
 			w.reset(now, dirty)
 			w.unlock()
-			c.waker <- w
 		}()
 	}
 }
 
+// Should only be called after a proper sync, so c.now is valid.
 func (c *Clock[T, D, RT]) checkWakers() {
-	wakers := make([]*waker[T, D, RT], nwakers)
-	for i := 0; i < nwakers; i++ {
-		wakers[i] = <-c.waker
-	}
 	now := c.now
-	for _, w := range wakers {
-		w := w
+	for i, _ := range c.wakers {
+		w := &c.wakers[i]
 		go func() {
 			w.lock()
 			w.checkSchedule(now)
 			w.unlock()
-			c.waker <- w
 		}()
 	}
 }
@@ -326,15 +321,17 @@ func (c *Clock[T, D, RT]) Step(dt D) {
 // NextAt returns the time at which the next scheduled timer should trigger.
 // If no timers are scheduled, returns a zero value.
 func (c *Clock[T, D, RT]) NextAt() (when T) {
-	//FIXME
-	return
-	/*
+	// TODO: could check wakers concurrently, but this is enough for now
+	for i, _ := range c.wakers {
+		w := &c.wakers[i]
+		w.lock()
 		next := w.queue.peek()
-		if next == nil {
-			return
+		if next != nil && when.IsZero() || when.After(next.when) {
+			when = next.when
 		}
-		return next.when
-	*/
+		w.unlock()
+	}
+	return
 }
 
 // Seconds returns a Duration value representing n Seconds. This is provided
