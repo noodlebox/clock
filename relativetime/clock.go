@@ -1,7 +1,6 @@
 package relativetime
 
 import (
-	"container/heap"
 	"sync"
 )
 
@@ -180,22 +179,22 @@ func (c *clock[T, D, RT]) checkSchedule() {
 }
 
 func (c *clock[T, D, RT]) schedule(t *timer[T, D]) {
-	heap.Push(&c.queue, t)
+	c.queue.insert(t)
 }
 
 func (c *clock[T, D, RT]) unschedule(t *timer[T, D]) {
 	if t.index == -1 {
 		return
 	}
-	heap.Remove(&c.queue, t.index)
+	c.queue.remove(t)
 }
 
 func (c *clock[T, D, RT]) reschedule(t *timer[T, D]) {
 	if t.index == -1 {
-		c.schedule(t)
+		c.queue.insert(t)
 		return
 	}
-	heap.Fix(&c.queue, t.index)
+	c.queue.fix(t)
 }
 
 // This method is called whenever a reference timer triggers.
