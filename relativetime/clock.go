@@ -41,7 +41,7 @@ type waker[T Time[T, D], D Duration, RT RTimer[D]] struct {
 	queue  queue[T, D] // Upcoming events, in local time
 	waker  RTimer[D]   // Interface used here for a default value of nil
 	wakeAt T           // Local time of next scheduled waking
-	mu     sync.Mutex
+	mu     sync.RWMutex
 	*Clock[T, D, RT]
 }
 
@@ -324,12 +324,12 @@ func (c *Clock[T, D, RT]) NextAt() (when T) {
 	// TODO: could check wakers concurrently, but this is enough for now
 	for i, _ := range c.wakers {
 		w := &c.wakers[i]
-		w.lock()
+		w.rlock()
 		next := w.queue.peek()
 		if next != nil && when.IsZero() || when.After(next.when) {
 			when = next.when
 		}
-		w.unlock()
+		w.runlock()
 	}
 	return
 }
