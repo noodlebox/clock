@@ -201,7 +201,7 @@ func (c *clock[T, D, RT]) reschedule(t *timer[T, D]) {
 // This method is called whenever a reference timer triggers.
 func (c *clock[T, D, RT]) wake() {
 	c.Lock()
-	c.advanceRef(c.ref.Now())
+	c.sync()
 	c.checkSchedule()
 	c.resetWaker()
 	c.Unlock()
@@ -466,6 +466,7 @@ func (t *Ticker[T, D]) Stop() {
 	isNext := t.t.index == 0
 	t.s.unschedule(t.t)
 	if isNext {
+		t.s.sync()
 		t.s.resetWaker()
 	}
 	t.s.Unlock()
@@ -568,6 +569,7 @@ func (t *Timer[T, D]) Stop() (active bool) {
 	isNext := t.t.index == 0
 	t.s.unschedule(t.t)
 	if isNext {
+		t.s.sync()
 		t.s.resetWaker()
 	}
 	t.s.Unlock()
