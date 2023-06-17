@@ -47,9 +47,9 @@ const nwakers = 4
 // example of using embedding with instantiated generic types for a drop in
 // replacement for a reference clock.
 type Clock[T Time[T, D], D Duration, RT RTimer[D]] struct {
-	ref    RClock[T, D, RT]
 	waker  chan *clock[T, D, RT]
 	wakers [nwakers]*clock[T, D, RT]
+	keeper *clock[T, D, RT]
 
 	mu sync.Mutex // Protects collecting all wakers
 }
@@ -59,8 +59,14 @@ type Clock[T Time[T, D], D Duration, RT RTimer[D]] struct {
 func NewClock[T Time[T, D], D Duration, RT RTimer[D]](ref RClock[T, D, RT], at T, scale float64) (c *Clock[T, D, RT]) {
 	rNow := ref.Now()
 	c = &Clock[T, D, RT]{
-		ref:   ref,
 		waker: make(chan *clock[T, D, RT], nwakers),
+		keeper: &clock[T, D, RT]{
+			ref:    ref,
+			active: false,
+			scale:  scale,
+			now:    at,
+			rNow:   rNow,
+		},
 	}
 	for i, _ := range c.wakers {
 		w := &clock[T, D, RT]{
@@ -253,6 +259,9 @@ func (c *Clock[T, D, RT]) sync(f func(*clock[T, D, RT])) {
 			w.Unlock()
 		}(w)
 	}
+	c.keeper.Lock()
+	f(c.keeper)
+	c.keeper.Unlock()
 	wg.Wait()
 	c.mu.Unlock()
 }
@@ -260,7 +269,7 @@ func (c *Clock[T, D, RT]) sync(f func(*clock[T, D, RT])) {
 // Start begins tracking the reference clock, if not already running. It is
 // fine to call Start() on a clock that is already running.
 func (c *Clock[T, D, RT]) Start() {
-	rNow := c.ref.Now()
+	rNow := c.keeper.ref.Now()
 	c.sync(func(w *clock[T, D, RT]) {
 		// Sync up before changing setting
 		w.advanceRef(rNow)
@@ -273,7 +282,7 @@ func (c *Clock[T, D, RT]) Start() {
 // Stop stops tracking the reference clock, if currently running. It is fine
 // to call Stop() on a clock that is not running.
 func (c *Clock[T, D, RT]) Stop() {
-	rNow := c.ref.Now()
+	rNow := c.keeper.ref.Now()
 	c.sync(func(w *clock[T, D, RT]) {
 		// Sync up before changing setting
 		w.advanceRef(rNow)
@@ -285,17 +294,15 @@ func (c *Clock[T, D, RT]) Stop() {
 
 // Active returns true if currently tracking the reference clock.
 func (c *Clock[T, D, RT]) Active() (active bool) {
-	w := <-c.waker
-	w.RLock()
-	c.waker <- w
-	active = w.active
-	w.RUnlock()
+	c.keeper.RLock()
+	active = c.keeper.active
+	c.keeper.RUnlock()
 	return
 }
 
 // SetScale sets the scaling factor for tracking the reference clock.
 func (c *Clock[T, D, RT]) SetScale(scale float64) {
-	rNow := c.ref.Now()
+	rNow := c.keeper.ref.Now()
 	c.sync(func(w *clock[T, D, RT]) {
 		// Sync up before changing setting
 		w.advanceRef(rNow)
@@ -307,11 +314,9 @@ func (c *Clock[T, D, RT]) SetScale(scale float64) {
 
 // Scale returns the scaling factor for tracking the reference clock.
 func (c *Clock[T, D, RT]) Scale() (scale float64) {
-	w := <-c.waker
-	w.RLock()
-	c.waker <- w
-	scale = w.scale
-	w.RUnlock()
+	c.keeper.RLock()
+	scale = c.keeper.scale
+	c.keeper.RUnlock()
 	return
 }
 
@@ -319,7 +324,7 @@ func (c *Clock[T, D, RT]) Scale() (scale float64) {
 // any timers are active, a value of now earlier than the previous setting
 // may lead to undefined behavior.
 func (c *Clock[T, D, RT]) Set(now T) {
-	rNow := c.ref.Now()
+	rNow := c.keeper.ref.Now()
 	c.sync(func(w *clock[T, D, RT]) {
 		// Reset sync point to given time
 		w.now, w.rNow = now, rNow
@@ -332,7 +337,7 @@ func (c *Clock[T, D, RT]) Set(now T) {
 // Step advances the local time forward by dt. If any timers are active, a
 // negative value for dt may lead to undefined behavior.
 func (c *Clock[T, D, RT]) Step(dt D) {
-	rNow := c.ref.Now()
+	rNow := c.keeper.ref.Now()
 	c.sync(func(w *clock[T, D, RT]) {
 		// Sync up before changing setting
 		w.advanceRef(rNow)
@@ -376,16 +381,14 @@ func (c *Clock[T, D, RT]) NextAt() (when T) {
 // Seconds returns a Duration value representing n Seconds. This is provided
 // to allow a relative clock itself to satisfy the reference clock interface.
 func (c *Clock[T, D, RT]) Seconds(n float64) D {
-	return c.ref.Seconds(n)
+	return c.keeper.ref.Seconds(n)
 }
 
 // Now returns the current time.
 func (c *Clock[T, D, RT]) Now() (now T) {
-	w := <-c.waker
-	w.RLock()
-	c.waker <- w
-	now = w.toLocal(w.ref.Now())
-	w.RUnlock()
+	c.keeper.RLock()
+	now = c.keeper.toLocal(c.keeper.ref.Now())
+	c.keeper.RUnlock()
 	return
 }
 
