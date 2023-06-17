@@ -155,6 +155,13 @@ func (c *clock[T, D, RT]) resetWaker() {
 		// Waker already set to the correct time, let it be
 		return
 	}
+	select {
+	case c.waking <- struct{}{}:
+		<-c.waking
+	default:
+		return
+	}
+
 	c.wakeAt = next.when
 
 	// Duration on reference clock until next timer should trigger
