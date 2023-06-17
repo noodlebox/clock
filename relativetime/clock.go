@@ -499,16 +499,27 @@ func (c *Clock[T, D, RT]) NewTicker(d D) *Ticker[T, D] {
 
 	w := <-c.waker
 	w.Lock()
-	ch := make(chan T, 1)
+	ch := make(chan T)
 	tm := &timer[T, D]{
-		f: func(when T) {
-			select {
-			case ch <- when:
-			default:
-			}
-		},
 		when:   w.sync().Add(d),
 		period: d,
+	}
+	tm.f = func(when T) {
+		select {
+		case ch <- when:
+		default:
+			w.unschedule(tm)
+			go func() {
+				ch <- when
+				w.Lock()
+				tm.when = w.sync().Add(tm.period)
+				w.schedule(tm)
+				if tm.index == 0 {
+					w.resetWaker()
+				}
+				w.Unlock()
+			}()
+		}
 	}
 	w.schedule(tm)
 	if tm.index == 0 {
