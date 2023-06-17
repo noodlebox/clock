@@ -198,14 +198,14 @@ func (c *clock[T, D, RT]) schedule(t *timer[T, D]) {
 }
 
 func (c *clock[T, D, RT]) unschedule(t *timer[T, D]) {
-	if t.index == -1 {
+	if t.index < 0 {
 		return
 	}
 	c.queue.remove(t)
 }
 
 func (c *clock[T, D, RT]) reschedule(t *timer[T, D]) {
-	if t.index == -1 {
+	if t.index < 0 {
 		c.queue.insert(t)
 		return
 	}
@@ -507,14 +507,28 @@ func (c *Clock[T, D, RT]) NewTicker(d D) *Ticker[T, D] {
 		when:   w.sync().Add(d),
 		period: d,
 	}
+	wait := make(chan struct{}, 1)
 	tm.f = func(when T) {
 		select {
 		case ch <- when:
 		default:
 			w.unschedule(tm)
+			tm.index = -2
+			select {
+			case wait <- struct{}{}:
+			default:
+				// Already waiting with a value
+				return
+			}
 			go func() {
 				ch <- when
 				w.Lock()
+				<-wait
+				if tm.index > -2 {
+					// Reset() or Stop() was called while waiting
+					w.Unlock()
+					return
+				}
 				tm.when = w.sync().Add(tm.period)
 				w.schedule(tm)
 				if tm.index == 0 {
@@ -571,7 +585,7 @@ func (t *Timer[T, D]) Reset(d D) (active bool) {
 	t.s.Lock()
 
 	t.t.when = t.s.sync().Add(d)
-	active = (t.t.index != -1)
+	active = t.t.index >= 0
 	isNext := t.t.index == 0
 	t.s.reschedule(t.t)
 	if isNext || t.t.index == 0 {
@@ -593,7 +607,7 @@ func (t *Timer[T, D]) Stop() (active bool) {
 
 	t.s.Lock()
 
-	active = (t.t.index != -1)
+	active = t.t.index >= 0
 	isNext := t.t.index == 0
 	t.s.unschedule(t.t)
 	if isNext {
