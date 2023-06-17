@@ -69,6 +69,7 @@ func NewClock[T Time[T, D], D Duration, RT RTimer[D]](ref RClock[T, D, RT], at T
 			scale:  scale,
 			now:    at,
 			rNow:   rNow,
+			waking: make(chan struct{}, 1),
 		}
 		c.waker <- w
 		c.wakers[i] = w
@@ -85,6 +86,7 @@ type clock[T Time[T, D], D Duration, RT RTimer[D]] struct {
 	queue  queue[T, D] // Upcoming events, in local time
 	waker  RTimer[D]   // Interface used here for a default value of nil
 	wakeAt T           // Local time of next scheduled waking
+	waking chan struct{}
 
 	sync.RWMutex
 
@@ -199,7 +201,13 @@ func (c *clock[T, D, RT]) reschedule(t *timer[T, D]) {
 
 // This method is called whenever a reference timer triggers.
 func (c *clock[T, D, RT]) wake() {
+	select {
+	case c.waking <- struct{}{}:
+	default:
+		return
+	}
 	c.Lock()
+	<-c.waking
 	c.sync()
 	c.checkSchedule()
 	c.resetWaker()
